@@ -1,7 +1,10 @@
 #ifndef BMP_H_INCLUDED
 #define BMP_H_INCLUDED
+#ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
+#endif
 #include <inttypes.h>
+
 //HEADER FIELD
 #define BM_TYPE 0x424D //windows 3.1, 95 etc
 #define BA_TYPE 0x4241 // OS/2 struct bitmap array
@@ -19,38 +22,37 @@
 #define BI_PNG 5            //The bitmap contains a PNG image
 #define BI_ALPHABITFIELDS 6 //This value is valid in Windows CE .NET 4.0 and later.
 
+#pragma pack (1)
 
 typedef struct {
-       short unsigned int headerField: 16;
-       long int sizeFile: 32;
-       short int reserved1: 16;
-       short int reserved2: 16;
-       long int offset: 32;
-
-}__attribute__ ((packed)) BitMapFileHeader;
-
-typedef struct {
-   unsigned long int sizeHeader: 32;
-   long int whidth: 32;
-   long int heigth: 32;
-   unsigned short int numPlanes: 16;
-   unsigned short int bpp: 16;
-   long unsigned int compression: 32;
-   long unsigned int imageSize: 32;
-   long int horizontalRes: 32;
-   long int verticalRes: 32;
-   long unsigned int numColorPalette: 32;
-   long unsigned int numImportantColors: 32;
-
-}__attribute__ ((packed)) BitMapInfoHeader;
+  uint16_t headerField: 16;
+  uint32_t sizeFile: 32;
+  uint16_t reserved1: 16;
+  uint16_t reserved2: 16;
+  uint32_t offset: 32;
+}BitMapFileHeader;
 
 typedef struct {
-   long unsigned int sizeHeader: 32;
-   unsigned short int whidth: 16;
-   unsigned short int heigth: 16;
-   unsigned short int numPlanes: 16;
-   unsigned short int bpp: 16;
-}__attribute__ ((packed)) BitMapCoreHeader;
+   uint32_t sizeHeader: 32;
+   uint32_t whidth: 32;
+   uint32_t heigth: 32;
+   uint16_t numPlanes: 16;
+   uint16_t bpp: 16;
+   uint32_t compression: 32;
+   uint32_t imageSize: 32;
+   uint32_t horizontalRes: 32;
+   uint32_t verticalRes: 32;
+   uint32_t numColorPalette: 32;
+   uint32_t numImportantColors: 32;
+} BitMapInfoHeader;
+
+typedef struct {
+   uint32_t sizeHeader: 32;
+   uint16_t whidth: 16;
+   uint16_t heigth: 16;
+   uint16_t numPlanes: 16;
+   uint16_t bpp: 16;
+} BitMapCoreHeader;
 
 
 
@@ -61,9 +63,9 @@ typedef struct {
 } Bmp;
 
 typedef struct {
-  uint8_t b;
-  uint8_t g;
-  uint8_t r;
-}__attribute__ ((packed)) Pixel;
+  unsigned char b;
+  unsigned char g;
+  unsigned char r;
+} Pixel;
 
 #endif // BMP_H_INCLUDED

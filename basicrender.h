@@ -1,10 +1,12 @@
 #ifndef BASICRENDER_H
 #define BASICRENDER_H 1
 
+#ifndef __STDC_FORMAT_MACROS
+#define __STDC_FORMAT_MACROS
+#endif
+#include <inttypes.h>
 #include <math.h>
 
-#define __STDC_FORMAT_MACROS
-#include <inttypes.h>
 //datatype
 typedef struct {
   double a[3], b[3], c[3], normal[3];
@@ -18,12 +20,14 @@ typedef struct {
 
 typedef struct {
   double c[3], d[3], o[3];
-  unsigned int w, h, wpx, hpx;
+  double w, h;
+  unsigned int wpx, hpx;
 } Camera;
 
+double dotProd(double *u, double *v);
+double magnitude(double *v);
 void crossProd(double *n, double *u, double *v);
 void normal(double *n,  double *a, double *b, double *c);
-double magnitude(double *v);
 void unitV(double *v);
 void uvV(double *uv, double *u, double *v);
 
@@ -39,7 +43,7 @@ void normal(double *n,  double *a, double *b, double *c) {
   ac[1] = c[1] - a[1];
   ac[2] = c[2] - a[2];
 
-  crossProd(n, ab, ab);
+  crossProd(n, ab, ac);
 };
 
 void crossProd(double *n, double *u, double *v) {
@@ -54,7 +58,7 @@ double dotProd(double *u, double *v) {
 }
 
 double magnitude(double *v) {
-  return sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+  return sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
 }
 void unitV(double *v) {
   double m;
@@ -73,6 +77,4 @@ void uvV(double *uv, double *u, double *v) {
 double determinant(double *a, double *b, double *c) {
   return (a[0] * b[1] * c[2] + b[0] * c[1] * a[2] + c[0] * a[1] * b[2]) - (a[0] * c[1] * b[2] + b[0] * a[1] * c[2] + c[0] * b[1] * a[2]);
 }
-
-
 #endif

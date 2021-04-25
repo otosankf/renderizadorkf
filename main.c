@@ -1,12 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
+
+#ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
+#endif
+
 #include <inttypes.h>
 #include <float.h>
 #include "basicrender.h"
 #include "bmp.h"
-
-
 
 int main(int argc, char const *argv[]) {
 
@@ -20,16 +22,19 @@ int main(int argc, char const *argv[]) {
 
   Camera camera;
 
-  double vCamOj[3];
-  double pInd[3] , cd[3], ijV[3], I[3];
+  double vCamOj[3], vCamOi[3];
+  double pInd[3] , cp[3], ijV[3], I[3];
 
-  int i, j, k;
+  unsigned long int i, j, k;
   unsigned int auxA, auxB, auxC;
   double deltai, deltaj;
   double play, t;
-  long int intersectedTriangle, paramDist;
+  long int intersectedTriangle;
+  double paramDist;
   double ponda, pondb, pondc;
   Pixel ** canvas;
+  unsigned int padding = 0x00000000;
+  unsigned short int lineMod;
 
   BitMapFileHeader fileHeader;
   BitMapInfoHeader infoHeader;
@@ -67,7 +72,7 @@ int main(int argc, char const *argv[]) {
   vRaw = (Point3d*) malloc (qty * sizeof(Point3d));
   vQty = qty;
   for ( i = 0; i < qty; i++) {
-    fscanf(fIn, "%Lf %Lf %Lf", &vRaw[i].p[0], &vRaw[i].p[1], &vRaw[i].p[2]);
+    fscanf(fIn, " %Lf %Lf %Lf", &vRaw[i].p[0], &vRaw[i].p[1], &vRaw[i].p[2]);
   }
 
   /* read face (triangle) */
@@ -75,7 +80,9 @@ int main(int argc, char const *argv[]) {
   triangles = (Triangle*) malloc (qty * sizeof(Triangle));
   fQty = qty;
   for ( i = 0; i < qty; i++) {
-    fscanf(fIn, " %u %u %u", &auxA, &auxB, &auxC);
+
+    fscanf(fIn, " %u %u %u %u", &auxA, &auxB, &auxC, &triangles[i].colorId);
+
     triangles[i].a[0] = vRaw[auxA].p[0];
     triangles[i].a[1] = vRaw[auxA].p[1];
     triangles[i].a[2] = vRaw[auxA].p[2];
@@ -92,132 +99,167 @@ int main(int argc, char const *argv[]) {
   kQty = qty;
   colors = (Pixel*) malloc (qty * sizeof(Pixel));
   for ( i = 0; i < qty; i++) {
-    fscanf(fIn, "%" SCNu8 "%" SCNu8 "%" SCNu8, &colors[i].r, &colors[i].g, &colors[i].b);
+    fscanf(fIn, " %u %u %u" , &auxA, &auxB, &auxC);
+    colors[i].r = auxA;
+    colors[i].g = auxB;
+    colors[i].b = auxC;
   }
 
   /* read camera */
-  fscanf(fIn, " %c %u",&section, &qty);
-  fscanf(fIn, " %Lf %Lf %Lf %Lf %Lf %Lf %Lf %Lf %Lf %u %u %u %u", &camera.c[0], &camera.c[1], &camera.c[2], &camera.d[0], &camera.d[1], &camera.d[2], &camera.o[0], &camera.o[1], &camera.o[2], &camera.w, &camera.h, &camera.wpx, &camera.hpx);
+  fscanf(fIn, " %c %u \n",&section, &qty);
+  fscanf(fIn, " %Lf %Lf %Lf %Lf %Lf %Lf %Lf %Lf %Lf %Lf %Lf %lu %lu", &camera.c[0], &camera.c[1], &camera.c[2], &camera.d[0], &camera.d[1], &camera.d[2], &camera.o[0], &camera.o[1], &camera.o[2], &camera.w, &camera.h, &camera.wpx, &camera.hpx);
 
   fclose(fIn);
+  /* end read */
 
+  /***************************
+  *  preparation for raytracer/render
+  ****************************/
   /* calculate triangles normal and determinant */
-  for (i = 0; i < vQty; i++) {
+  for (i = 0; i < fQty; i++) {
     normal(triangles[i].normal, triangles[i].a, triangles[i].b, triangles[i].c);
-    triangles[k].ds = determinant(triangles[i].a, triangles[i].b, triangles[i].c);
+    unitV(triangles[i].normal);
+    triangles[i].ds = determinant(triangles[i].a, triangles[i].b, triangles[i].c);
   }
 
-  /* calculate canvas output */
-  normal(vCamOj, camera.c, camera.o, camera.d);
+  /* calculate canvas output 1:
+  *  unit vector for x and y output image refence.
+  */
+  normal(vCamOj, camera.c, camera.d, camera.o);
   unitV(vCamOj);
+  uvV(vCamOi, camera.c, camera.o);
+  unitV(vCamOi);
 
+  /* calculate canvas output 2:
+  *  -calculate initial position pixel matrix for canvas output.
+  *     Note: The initial position is relative to the bottom-left corner of the output image
+  *  -calculate 3d separation delta. 2d pixel output equivalent.
+  */
   deltai = (double) camera.h / camera.hpx;
   deltaj = (double) camera.w / camera.wpx;
 
-  uvV(cd, camera.c, camera.d);
+  pInd[0] = camera.d[0] - (((double)(3 - (int)camera.wpx % 2))*0.5 + (double)(camera.wpx / 2)) * deltaj * vCamOj[0];
+  pInd[1] = camera.d[1] - (((double)(3 - (int)camera.wpx % 2))*0.5 + (double)(camera.wpx / 2)) * deltaj * vCamOj[1];
+  pInd[2] = camera.d[2] - (((double)(3 - (int)camera.wpx % 2))*0.5 + (double)(camera.wpx / 2)) * deltaj * vCamOj[2];
 
-  pInd[0] = cd[0] - ((1 + camera.wpx % 2)*0.5 + (camera.wpx / 2)) * deltaj * vCamOj[0];
-  pInd[1] = cd[1] - ((1 + camera.wpx % 2)*0.5 + (camera.wpx / 2)) * deltaj * vCamOj[1];
-  pInd[2] = cd[2] - ((1 + camera.wpx % 2)*0.5 + (camera.wpx / 2)) * deltaj * vCamOj[2];
+  pInd[0] = pInd[0] - (((double)(-1 + (int)camera.hpx % 2))*0.5 + (double)(camera.hpx / 2)) * deltai * vCamOi[0];
+  pInd[1] = pInd[1] - (((double)(-1 + (int)camera.hpx % 2))*0.5 + (double)(camera.hpx / 2)) * deltai * vCamOi[1];
+  pInd[2] = pInd[2] - (((double)(-1 + (int)camera.hpx % 2))*0.5 + (double)(camera.hpx / 2)) * deltai * vCamOi[2];
 
-  pInd[0] = pInd[0] - ((1 + camera.hpx % 2)*0.5 + (camera.hpx / 2)) * deltai * camera.o[0];
-  pInd[1] = pInd[1] - ((1 + camera.hpx % 2)*0.5 + (camera.hpx / 2)) * deltai * camera.o[1];
-  pInd[2] = pInd[2] - ((1 + camera.hpx % 2)*0.5 + (camera.hpx / 2)) * deltai * camera.o[2];
+  canvas = (Pixel**) malloc(camera.hpx * sizeof(void*));
 
-  canvas = (Pixel**) malloc(camera.hpx * sizeof(Pixel*));
   for (i = 0; i < camera.hpx; i++) {
 
     canvas[i] = (Pixel*)malloc(camera.wpx * sizeof(Pixel));
   }
 
+  /***************************
+  *  raytracer/render
+  ****************************/
   for (i = 0; i < camera.hpx; i++) {
-    ijV[0] = pInd[0] + deltai * camera.o[0] * i;
-    ijV[1] = pInd[1] + deltai * camera.o[1] * i;
-    ijV[2] = pInd[2] + deltai * camera.o[2] * i;
 
-    intersectedTriangle = -1;
-    paramDist = 0;
+    /* set vertical canvas position image (i) */
+    ijV[0] = pInd[0] + deltai * vCamOi[0] * (double) i;
+    ijV[1] = pInd[1] + deltai * vCamOi[1] * (double) i;
+    ijV[2] = pInd[2] + deltai * vCamOi[2] * (double) i;
+
     for (j = 0; j < camera.wpx; j++) {
-      ijV[0] = pInd[0] + deltaj * vCamOj[0];
-      ijV[1] = pInd[1] + deltaj * vCamOj[1];
-      ijV[2] = pInd[2] + deltaj * vCamOj[2];
+      /* set horizontal canvas position image (j) */
+      ijV[0] = ijV[0] + deltaj * vCamOj[0];
+      ijV[1] = ijV[1] + deltaj * vCamOj[1];
+      ijV[2] = ijV[2] + deltaj * vCamOj[2];
 
-      // raytracer
+      /* Raytracer */
+      intersectedTriangle = -1;
+      paramDist = 0;
+      uvV(cp, camera.c, ijV);
+
       for ( k = 0; k < fQty; k++) {
         //is parallel?
-        play = dotProd(cd, triangles[k].normal);
+        play = dotProd(cp, triangles[k].normal);
+
         if (play) {
-          // find t (parametric function)
-          t = (triangles[k].a[0] * triangles[k].normal[0] + triangles[k].a[1] * triangles[k].normal[1] + triangles[k].a[2] * triangles[k].normal[2] - triangles[k].normal[0] * camera.c[0] - triangles[k].normal[1] * camera.c[1] - triangles[k].normal[2] * camera.c[2]) / (triangles[k].normal[0] * camera.d[0] + triangles[k].normal[1] * camera.d[1] + triangles[k].normal[2] * camera.d[2]  - triangles[k].normal[0] * camera.c[0] - triangles[k].normal[1] * camera.c[1] - triangles[k].normal[2] * camera.c[2]);
-          if (t < paramDist || t == 0) {
-            //I is on triangle?
-            I[0] = (1-t)*camera.c[0] + t * camera.d[0];
-            I[1] = (1-t)*camera.c[1] + t * camera.d[1];
-            I[2] = (1-t)*camera.c[2] + t * camera.d[2];
+          /* find  nearest t (parametric function) to canvas */
+          t = (triangles[k].a[0] * triangles[k].normal[0] + triangles[k].a[1] * triangles[k].normal[1] + triangles[k].a[2] * triangles[k].normal[2] - triangles[k].normal[0] * camera.c[0] - triangles[k].normal[1] * camera.c[1] - triangles[k].normal[2] * camera.c[2]) / (triangles[k].normal[0] * ijV[0] + triangles[k].normal[1] * ijV[1] + triangles[k].normal[2] * ijV[2]  - triangles[k].normal[0] * camera.c[0] - triangles[k].normal[1] * camera.c[1] - triangles[k].normal[2] * camera.c[2]);
+
+          if ((t < paramDist || intersectedTriangle == -1) && t >= 1) {
+            /* find if I is inside triangle */
+            I[0] = (1-t)*camera.c[0] + t * ijV[0];
+            I[1] = (1-t)*camera.c[1] + t * ijV[1];
+            I[2] = (1-t)*camera.c[2] + t * ijV[2];
 
             ponda = determinant( I, triangles[k].b, triangles[k].c)/triangles[k].ds;
             pondb = determinant( triangles[k].a, I, triangles[k].c)/triangles[k].ds;
             pondc = determinant( triangles[k].a, triangles[k].b, I)/triangles[k].ds;
 
-            if (ponda >= 0 && pondb >= 0 && pondc >= 0) {
+            if ((ponda >= 0 && pondb >= 0 && pondc >= 0) || (ponda < 0 && pondb < 0 && pondc < 0)) {
+              /* set nearest face founded (triangle) intersected*/
               paramDist = t;
               intersectedTriangle = k;
             }
           }
         }
       }//end K
-      // draw pixel
+
+      /*
+      *  Render pixel on canvas
+      */
       if (intersectedTriangle < 0) {
-        intersectedTriangle = 0;
+        /* default background index color */
+        auxB = 0;
+      }else {
+        auxB = triangles[intersectedTriangle].colorId;
       }
-      canvas[i][j].r = colors[intersectedTriangle].r;
-      canvas[i][j].g = colors[intersectedTriangle].g;
-      canvas[i][j].b = colors[intersectedTriangle].b;
-    }
-  }
-  //store bmp file
-  fileHeader.headerField = BM_TYPE;
-  fileHeader.sizeFile = sizeof(BitMapFileHeader) + sizeof(BitMapInfoHeader) + camera.wpx * camera.hpx + 2 * camera.hpx;
+      canvas[i][j].r = colors[auxB].r;
+      canvas[i][j].g = colors[auxB].g;
+      canvas[i][j].b = colors[auxB].b;
+    }// end j
+  }// end i
+  /* end raytracer/render */
+
+  /**************************
+  *  print image file (bmp)
+  ***************************/
+  /* set headers file */
+  fileHeader.headerField = reverse_bytes_16(BM_TYPE);
+  fileHeader.sizeFile = (54 + camera.wpx * camera.hpx * 3 + 2 * camera.hpx);
   fileHeader.reserved1 = 0;
   fileHeader.reserved2 = 0;
-  fileHeader.offset = sizeof(BitMapFileHeader) + sizeof(BitMapInfoHeader);
+  fileHeader.offset = (54);
 
-  infoHeader.sizeHeader = sizeof(BitMapInfoHeader);
-  infoHeader.whidth = camera.wpx;
-  infoHeader.heigth = camera.hpx;
-  infoHeader.numPlanes = 1;
-  infoHeader.bpp = 24;
-  infoHeader.compression = BI_RGB;
-  infoHeader.imageSize = camera.wpx * camera.hpx + 2 * camera.hpx;
-  infoHeader.horizontalRes = 2835;
-  infoHeader. verticalRes = 2835;
+  infoHeader.sizeHeader = (40);
+  infoHeader.whidth = (camera.wpx);
+  infoHeader.heigth = (camera.hpx);
+  infoHeader.numPlanes = (1);
+  infoHeader.bpp = (24);
+  infoHeader.compression = (BI_RGB);
+  infoHeader.imageSize = (camera.wpx * camera.hpx + 2 * camera.hpx);
+  infoHeader.horizontalRes = (2835);
+  infoHeader. verticalRes = (2835);
   infoHeader.numColorPalette = 0;
   infoHeader.numImportantColors = 0;
-  // short unsigned int headerField = BM_TYPE;
-  // long int sizeFile = sizeof(BitMapFileHeader) + sizeof(BitMapInfoHeader) + camera.wpx * camera.hpx + 2 * camera.hpx;
-  // short int reserved1 = 0;
-  // short int reserved2 = 0;
-  // long int offset = 54;
-  //
-  // fprintf(fOut,"%hb", BM_TYPE);
-  // fwrite(&sizeFile, 4, 1, fOut);
-  // fwrite(&reserved1, 2, 1, fOut);
-  // fwrite(&reserved2, 2, 1, fOut);
-  // fwrite(&offset, 4, 1, fOut);
-  fwrite((unsigned char *)&fileHeader, 1, sizeof(BitMapFileHeader), fOut);
-  fwrite((unsigned char *)&infoHeader, 1, sizeof(BitMapInfoHeader), fOut);
 
+  fwrite((unsigned char *)&fileHeader, 1, 14, fOut);
+  fwrite((unsigned char *)&infoHeader, 1, 40, fOut);
 
+  /* Padding for 4 byte alignment */
+  lineMod = camera.wpx * (infoHeader.bpp/8)%4;
+
+  /* print canvas (pixel matrix) on file */
   for (i = 0; i < camera.hpx; i++) {
-    fwrite (canvas[i], sizeof(uint8_t) * 3, camera.wpx, fOut);
-    fwrite ("AB", sizeof(uint8_t) * 2, 1, fOut);
+    fwrite (&canvas[i][0], sizeof(Pixel), camera.wpx, fOut);
+    if (lineMod > 0) {
+      fwrite (&padding, 1, 4 -lineMod, fOut);
+    }
   }
 
   fclose(fOut);
   free(vRaw);
   free(triangles);
+  for ( i = 0; i < kQty; i++) {
+    free(&colors[i]);
+  }
   free(colors);
-  printf("todo OK");
 
   return 0;
 }
