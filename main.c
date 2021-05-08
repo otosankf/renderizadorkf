@@ -1,3 +1,29 @@
+// The MIT License (MIT)
+//
+// Copyright (c) 2021 Pierre Alexis Carriel Monroy
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+//
+// [MIT License](http://opensource.org/licenses/MIT).
+
+
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -9,6 +35,7 @@
 #include <float.h>
 #include "basicrender.h"
 #include "bmp.h"
+#include "endianess.h"
 
 int main(int argc, char const *argv[]) {
 
@@ -175,25 +202,24 @@ int main(int argc, char const *argv[]) {
       uvV(cp, camera.c, ijV);
 
       for ( k = 0; k < fQty; k++) {
-        //is parallel?
+        //is not parallel?
         play = dotProd(cp, triangles[k].normal);
 
         if (play) {
-          /* find  nearest t (parametric function) to canvas */
-          t = (triangles[k].a[0] * triangles[k].normal[0] + triangles[k].a[1] * triangles[k].normal[1] + triangles[k].a[2] * triangles[k].normal[2] - triangles[k].normal[0] * camera.c[0] - triangles[k].normal[1] * camera.c[1] - triangles[k].normal[2] * camera.c[2]) / (triangles[k].normal[0] * ijV[0] + triangles[k].normal[1] * ijV[1] + triangles[k].normal[2] * ijV[2]  - triangles[k].normal[0] * camera.c[0] - triangles[k].normal[1] * camera.c[1] - triangles[k].normal[2] * camera.c[2]);
+          /* calculate t parametric function*/
+          t = findt(&triangles[k], camera.c, ijV);
 
+          /* find  nearest t (parametric function) to canvas */
           if ((t < paramDist || intersectedTriangle == -1) && t >= 1) {
             /* find if I is inside triangle */
-            I[0] = (1-t)*camera.c[0] + t * ijV[0];
-            I[1] = (1-t)*camera.c[1] + t * ijV[1];
-            I[2] = (1-t)*camera.c[2] + t * ijV[2];
+            findI(I, t, camera.c, ijV);
 
             ponda = determinant( I, triangles[k].b, triangles[k].c)/triangles[k].ds;
             pondb = determinant( triangles[k].a, I, triangles[k].c)/triangles[k].ds;
             pondc = determinant( triangles[k].a, triangles[k].b, I)/triangles[k].ds;
 
             if ((ponda >= 0 && pondb >= 0 && pondc >= 0) || (ponda < 0 && pondb < 0 && pondc < 0)) {
-              /* set nearest face founded (triangle) intersected*/
+              /* set nearest face founded (triangle) intersected */
               paramDist = t;
               intersectedTriangle = k;
             }
@@ -220,9 +246,12 @@ int main(int argc, char const *argv[]) {
   /**************************
   *  print image file (bmp)
   ***************************/
+  /* Padding for 4 byte alignment */
+  lineMod = (camera.wpx *(4-3)) % 4;
+
   /* set headers file */
   fileHeader.headerField = reverse_bytes_16(BM_TYPE);
-  fileHeader.sizeFile = (54 + camera.wpx * camera.hpx * 3 + 2 * camera.hpx);
+  fileHeader.sizeFile = (54 + camera.wpx * camera.hpx * 3 + lineMod * camera.hpx);
   fileHeader.reserved1 = 0;
   fileHeader.reserved2 = 0;
   fileHeader.offset = (54);
@@ -242,14 +271,11 @@ int main(int argc, char const *argv[]) {
   fwrite((unsigned char *)&fileHeader, 1, 14, fOut);
   fwrite((unsigned char *)&infoHeader, 1, 40, fOut);
 
-  /* Padding for 4 byte alignment */
-  lineMod = camera.wpx * (infoHeader.bpp/8)%4;
-
   /* print canvas (pixel matrix) on file */
   for (i = 0; i < camera.hpx; i++) {
     fwrite (&canvas[i][0], sizeof(Pixel), camera.wpx, fOut);
     if (lineMod > 0) {
-      fwrite (&padding, 1, 4 -lineMod, fOut);
+      fwrite (&padding, 1, lineMod, fOut);
     }
   }
 
